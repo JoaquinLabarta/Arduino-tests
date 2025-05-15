@@ -3,7 +3,6 @@ int buttons[] = {7,8,12}; // Red, Yellow, Green
 int analogicos[] = {A0,A1}; // LDR, Potenciometro
 bool estados[] = {true,true,true};
 bool estAnteBut[] = {HIGH,HIGH,HIGH};
-int BRILLO;
 
 void setup() {
   Serial.begin(9600);
@@ -17,7 +16,7 @@ void loop() {
 
   int luz = analogRead(analogicos[0]);
   int pot = analogRead(analogicos[1]);
-  BRILLO = map(pot, 0, 1023, 0, 255); // Mapea pot * 255 / 1023
+  int BRILLO = map(pot, 0, 1023, 0, 255); // Mapea pot * 255 / 1023
 
   Serial.print(luz); // Chequeo que lee el LDR
   delay(50); // Para no saturar puerto
