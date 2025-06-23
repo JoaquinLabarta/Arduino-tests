@@ -1,66 +1,91 @@
-const int sensores[5] = {2, 4, 7, 8, 12}; // S0..S4 (Izq a Der)
-const int motores[6] = {6, 11, 3, 5, 9, 10};  // ENABLE1, ENABLE2, IN1, IN2, IN3, IN4
+const int sensores[5] = {A0, A1, A2, A3, A4}; // S0..S4 (Izq a Der)
+const int motores[6] = {10, 11, 7, 6, 5, 4};  // ENABLE1, ENABLE2, IN1, IN2, IN3, IN4
+
+// Variables globales del PID
+int lastError = 0; // Ultima error registrado
+float integral = 0; // Acumulador del termino integral
+int lastKnownPosition = 2000; // Ultima posicion conocida (inicio en el centro)
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(9600); // Inicia comunicacion para depurar
 
+  // Configura los pines de los sensores y motores
   for (int i = 0; i < 5; i++) {
     pinMode(sensores[i], INPUT);
   }
-
   for (int j = 0; j < 6; j++) {
     pinMode(motores[j], OUTPUT);
   }
 }
 
 void loop() {
-  // Velocidades maximas
-  analogWrite(motores[0], 50); // ENABLE1
-  analogWrite(motores[1], 50); // ENABLE2
+  // Lectura de sensores y cálculo de posición
+  int sensorValues[5];
+  int position = 0;
+  int activeSensors = 0;
 
-  // Leer sensores
-  int s[5];
   for (int i = 0; i < 5; i++) {
-    s[i] = digitalRead(sensores[i]);
+    sensorValues[i] = analogRead(sensores[i]);
+    if (sensorValues[i]>500) {
+      position += i * 1000; // Configuro peso a los sensores (0,1000,2000,3000,4000)
+      activeSensors++; // Cuento cantidad de sensores activos
+    }
   }
 
-  // Lógica de movimiento
-  if (s[0] == 0 && s[1] == 0 && s[2] == 1 && s[3] == 0 && s[4] == 0) {
-    avanzar();
-  } else if ((s[0] == 0 && s[1] == 1) || (s[0] == 1)) {
-    girarIzquierda();
-  } else if ((s[3] == 1 && s[4] == 0) || (s[4] == 1)) {
-    girarDerecha();
-  } else if (s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0 && s[4] == 0) {
-    detener();
+  int linePosition;
+  if (activeSensors > 0) {
+    linePosition = position / activeSensors; // Promedio posicion
+    lastKnownPosition = linePosition;
+  } else {
+    linePosition = lastKnownPosition; // Mantener última posición si se pierde la línea
   }
-  delay(100);
-}
 
-void avanzar() {
-  digitalWrite(motores[2], HIGH); // IN1
-  digitalWrite(motores[3], LOW);  // IN2
-  digitalWrite(motores[4], HIGH); // IN3
-  digitalWrite(motores[5], LOW);  // IN4
-}
+  // PID
+  int setPoint = 2000; // Centro
+  int error = linePosition - setPoint; // Error actual
 
-void girarIzquierda() {
-  digitalWrite(motores[2], LOW);
-  digitalWrite(motores[3], HIGH);
-  digitalWrite(motores[4], HIGH);
-  digitalWrite(motores[5], LOW);
-}
+  // Constantes PID
+  float Kp = 0.08; // Ganancia proporcional
+  float Ki = 0.0003; // Ganancia integral
+  float Kd = 0.05; // Ganancia derivativa
 
-void girarDerecha() {
-  digitalWrite(motores[2], HIGH);
-  digitalWrite(motores[3], LOW);
-  digitalWrite(motores[4], LOW);
-  digitalWrite(motores[5], HIGH);
-}
+  integral += error;
+  integral = constrain(integral, -1000, 1000); // Acota el valor para proteger contra integral windup
 
-void detener() {
-  digitalWrite(motores[2], LOW);
-  digitalWrite(motores[3], LOW);
-  digitalWrite(motores[4], LOW);
-  digitalWrite(motores[5], LOW);
+  int derivative = error - lastError; // Cambio de error respecto al anterior
+  float output = Kp * error + Ki * integral + Kd * derivative; // Cálculo de salida PID
+  lastError = error; // Actualiza el último error
+
+  // Control de motores
+  int baseSpeed = 100; // Velocidad base de los motores (ajustable)
+  int maxSpeed = 255; // Velocidad máxima de los motores
+
+  int leftSpeed = baseSpeed + output; // Ajuste de velocidad izquierda
+  int rightSpeed = baseSpeed - output; // Ajuste de velocidad derecha
+
+  // Limita las velocidades para no exceder el PWM máximo
+  leftSpeed = constrain(leftSpeed, 0, maxSpeed);
+  rightSpeed = constrain(rightSpeed, 0, maxSpeed); 
+
+  // Motor izquierdo
+  analogWrite(motores[0], leftSpeed);    // ENABLE1
+  digitalWrite(motores[2], HIGH);        // IN1 (sentido adelante activado)
+  digitalWrite(motores[3], LOW);         // IN2 (sentido trasero no activado)
+
+  // Motor derecho
+  analogWrite(motores[1], rightSpeed);   // ENABLE2
+  digitalWrite(motores[4], HIGH);        // IN3 (sentido adelante activado)
+  digitalWrite(motores[5], LOW);         // IN4 (sentido trasero no activado)
+
+  // Debug por Serial
+  Serial.print("Error: ");
+  Serial.print(error);
+  Serial.print(" | Output: ");
+  Serial.print(output);
+  Serial.print(" | L: ");
+  Serial.print(leftSpeed);
+  Serial.print(" R: ");
+  Serial.println(rightSpeed);
+
+  delay(10); // Pausa para estabilidad
 }
